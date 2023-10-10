@@ -1,5 +1,7 @@
 import requests
 import json
+import piexif
+import piexif.helper
 import re
 import os
 import sys, getopt
@@ -12,11 +14,23 @@ loadedImages = 0;
 def getUrl(page : int) -> str:
     return f"{URL}{page}";
 
+class Vehicle:
+    def __init__(self, vehicleJson):
+        self.make = vehicleJson['make'];
+        self.model = vehicleJson['model'];
+
+    def toMetadata(self):
+        return {
+            "make": self.make,
+            "model": self.model,
+        }
+
 class Image:
-    def __init__(self, url):
+    def __init__(self, url, vehicle : Vehicle):
         self.url = self.normalizeUrl(url);
         global loadedImages
         loadedImages = loadedImages + 1;
+        self.vehicle = vehicle;
 
     def normalizeUrl(self, url) -> str:
         return re.sub("\/[0-9]*x[0-9]*\.[a-z]*", "", url);
@@ -24,6 +38,11 @@ class Image:
     def getImageName(self) -> str:
         split = self.url.split("/")
         return split[len(split) - 1];
+
+    def getMetadata(self):
+        return {
+            "vehicle": self.vehicle.toMetadata()
+        }
 
     def download(self, location) -> bool:
         print(f"Retrieving: {self.url}");
@@ -36,17 +55,26 @@ class Image:
 
         print(f"Saving to: {path}");
         open(path, "wb").write(response.content);
+
+        exif_dict = piexif.load(path)
+        # insert custom data in usercomment field
+        exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(
+            json.dumps(self.getMetadata()),
+            encoding="unicode"
+        )
+        # insert mutated data (serialised into JSON) into image
+        piexif.insert(
+            piexif.dump(exif_dict),
+            path
+        )
+
         return True;
 
-class Vehicle:
-    def __init__(self, vehicleJson):
-        self.make = vehicleJson['make'];
-        self.model = vehicleJson['model'];
 
 class Listing:
     def __init__(self, listingJson):
-        self.images = list(map(lambda e: Image(e), list(listingJson['images'])));
         self.vehicle = Vehicle(listingJson['vehicle']);
+        self.images = list(map(lambda e: Image(e, self.vehicle), list(listingJson['images'])));
 
 def getListings(page : int) -> list[Listing] | None:
     response = requests.get(getUrl(page));
