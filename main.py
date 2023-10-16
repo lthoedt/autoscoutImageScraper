@@ -5,14 +5,29 @@ import piexif.helper
 import re
 import os
 import sys, getopt
+from bs4 import BeautifulSoup
 
-URL : str = "https://www.autoscout24.nl/_next/data/as24-search-funnel_main-4422/lst.json?cy=NL&page=";
+URL : str = "https://www.autoscout24.nl/_next/data/";
+
+PAGE_URL : str = "https://www.autoscout24.nl/lst?atype=C&cy=NL";
+
 downloadLocation = "./images";
 
 loadedImages = 0;
 
+id = None
+
+def getId() -> str | None:
+    response : Response = requests.get(PAGE_URL)
+    soup = BeautifulSoup(response.content, "html.parser")
+    pageJsonScript = soup.find('script', id='__NEXT_DATA__', type = "application/json").text;
+    if (len(pageJsonScript) == 0): return None;
+    pageJson = json.loads(pageJsonScript);
+    return pageJson['buildId'];
+
 def getUrl(page : int) -> str:
-    return f"{URL}{page}";
+    global id
+    return f"{URL}{id}/lst.json?cy=NL&page={page}";
 
 class Vehicle:
     def __init__(self, vehicleJson):
@@ -89,6 +104,13 @@ def main(argv):
     global loadedImages
     loadedImages = 0;
     nImages : int = 20;
+
+    global id
+    id = getId();
+    
+    if (id == None):
+        print("Page id was not found.");
+        sys.exit();
 
     opts, args = getopt.getopt(argv,"hd:n:",["dir="])
     for opt, arg in opts:
